@@ -1,44 +1,57 @@
 """
-Simple AI service mock for Lab 05.
+Mock AI Vision service for Lab 05 – Core Business stack.
 
-This service exposes two endpoints:
+Dùng Python stdlib để chạy trực tiếp trên python:3.11-slim mà không cần pip install thêm.
 
-* `GET /health` – returns status, service name and version.
-* `POST /predict` – returns a dummy list of detected objects and confidences.
-
-You can replace this file with your actual inference code (e.g. YOLOv8 model).
+Endpoints:
+  GET  /health   – trả về trạng thái service
+  POST /predict  – trả về kết quả phát hiện đối tượng giả lập
 """
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+import sys
 
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List
-
-SERVICE_NAME = "ai-service"
+SERVICE_NAME = "ai-vision-mock"
 SERVICE_VERSION = "0.5.0"
 
-app = FastAPI(
-    title="FIT4110 Lab 05 - AI Service",
-    version=SERVICE_VERSION,
-    description="Mock AI service used in Docker Compose stack.",
-)
 
+class Handler(BaseHTTPRequestHandler):
+    def _send_json(self, code: int, body: dict) -> None:
+        data = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
-class Prediction(BaseModel):
-    objects: List[str]
-    confidence: List[float]
+    def do_GET(self):
+        if self.path == "/health":
+            self._send_json(200, {
+                "status": "ok",
+                "service": SERVICE_NAME,
+                "version": SERVICE_VERSION,
+            })
+        else:
+            self._send_json(404, {"detail": "Not found"})
 
+    def do_POST(self):
+        if self.path == "/predict":
+            length = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(length)
+            self._send_json(200, {
+                "objects": ["person"],
+                "confidence": [0.95],
+                "risk_level": "low",
+            })
+        else:
+            self._send_json(404, {"detail": "Not found"})
 
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok", "service": SERVICE_NAME, "version": SERVICE_VERSION}
-
-
-@app.post("/predict", response_model=Prediction)
-def predict() -> Prediction:
-    # This dummy implementation always returns two objects
-    return Prediction(objects=["person", "bicycle"], confidence=[0.98, 0.85])
+    def log_message(self, fmt, *args):
+        print(f"[ai-vision-mock] {args[0]} {args[1]}", file=sys.stdout, flush=True)
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=9000)
+    port = 9000
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    print(f"[ai-vision-mock] Listening on port {port}", flush=True)
+    server.serve_forever()

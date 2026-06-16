@@ -8,13 +8,13 @@ install:
 lint:
 	npx spectral lint contracts/*.yaml
 
-# Build Docker image for API only
+# Build Docker image for Core Business API only
 build:
-	docker build -t fit4110/iot-ingestion:lab05 .
+	docker build -t fit4110/core-business:v0.1.0-team-core .
 
 # Run API container standalone (not via compose)
 run:
-	docker run --rm --name fit4110-api-lab05 -p 8000:8000 --env-file .env.example fit4110/iot-ingestion:lab05
+	docker run --rm --name fit4110-core-lab05 -p 8000:8000 --env-file .env.example fit4110/core-business:v0.1.0-team-core
 
 # Compose commands
 compose-up:

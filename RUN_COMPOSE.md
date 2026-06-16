@@ -1,19 +1,19 @@
-# RUN_COMPOSE.md – Hướng dẫn chạy Lab 05
+# RUN_COMPOSE.md – Hướng dẫn chạy Lab 05 (Core Business Service)
 
-Tài liệu này hướng dẫn người khác clone repo sạch và chạy lại stack Compose của Lab 05.
+Tài liệu này hướng dẫn người khác clone repo sạch và chạy lại stack Compose của Lab 05 cho **Core Business Policy Engine**.
 
 ---
 
-## 1. Clone repo
+## 1. Clone repo
 
 ```bash
 git clone <repo-url>
-cd FIT4110_lab05_docker_compose_readiness
+cd fit4110-lab5-a6_core_business
 ```
 
 ---
 
-## 2. Cài dependencies cho Newman/Prism/Spectral (tuỳ chọn)
+## 2. Cài dependencies cho Newman/Prism/Spectral (tuỳ chọn)
 
 ```bash
 npm install
@@ -21,21 +21,23 @@ npm install
 
 ---
 
-## 3. Build & chạy stack Docker Compose
+## 3. Build & chạy stack Docker Compose
 
 ```bash
-# Copy .env.example sang .env và chỉnh sửa nếu cần
+# Copy .env.example sang .env (không commit file .env thật)
 cp .env.example .env
 
-# Build images (nếu chưa có) và khởi động các container trong nền
+# Build images và khởi động tất cả container trong nền
 docker compose up -d --build
 ```
 
-Lệnh trên sẽ tạo các container:
+Stack sẽ tạo 3 container theo thứ tự:
 
-- `fit4110-db-lab05` (PostgreSQL)
-- `fit4110-ai-lab05` (AI service mẫu chạy port 9000)
-- `fit4110-api-lab05` (API FastAPI trên port 8000)
+| Container | Image | Port | Vai trò |
+|---|---|---|---|
+| `fit4110-db-lab05` | postgres:15-alpine | 5432 (internal) | Cơ sở dữ liệu PostgreSQL |
+| `fit4110-ai-lab05` | python:3.11-slim | 9000 | AI Vision Mock |
+| `fit4110-core-lab05` | (build local) | 8000 | Core Business Policy Engine |
 
 Theo dõi log:
 
@@ -43,28 +45,71 @@ Theo dõi log:
 docker compose logs -f
 ```
 
-Sau vài giây, kiểm tra health của mỗi service:
+---
+
+## 4. Kiểm tra readiness
+
+Sau khi stack khởi động, kiểm tra health của từng service:
 
 ```bash
-# API
+# Core Business API
 curl http://localhost:8000/health
 
-# AI service
+# AI Vision Mock
 curl http://localhost:9000/health
 
-# DB readiness
-docker exec -it fit4110-db-lab05 pg_isready -U $POSTGRES_USER
+# PostgreSQL
+docker exec -it fit4110-db-lab05 pg_isready -U lab05
 ```
 
-Bạn cũng có thể truy cập endpoint `/predict` của AI service để xem kết quả mẫu:
-
-```bash
-curl -X POST http://localhost:9000/predict
+Kết quả mong đợi từ API:
+```json
+{"status": "ok", "service": "core-business", "version": "0.5.0"}
 ```
 
 ---
 
-## 4. Chạy Newman test trên stack Compose (tuỳ chọn)
+## 5. Thử nghiệm các endpoint
+
+### Gửi sự kiện nhiệt độ cao (sẽ tạo alert)
+```bash
+curl -X POST http://localhost:8000/events/iot \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d '{"device_id":"ESP32-LAB-A01","metric":"temperature","value":38.5,"unit":"celsius","timestamp":"2026-05-13T08:30:00+07:00"}'
+```
+
+### Gửi sự kiện quẹt thẻ ngoài giờ
+```bash
+curl -X POST http://localhost:8000/events/access \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d '{"card_id":"RFID-0042","gate_id":"GATE-A1","direction":"IN","timestamp":"2026-05-13T23:15:00+07:00"}'
+```
+
+### Gửi kết quả AI Vision rủi ro cao
+```bash
+curl -X POST http://localhost:8000/events/vision \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d '{"camera_id":"CAM-01","objects":["person"],"confidence":[0.95],"risk_level":"high","timestamp":"2026-05-13T08:30:00+07:00"}'
+```
+
+### Xem danh sách cảnh báo
+```bash
+curl http://localhost:8000/alerts \
+  -H "Authorization: Bearer local-dev-token"
+```
+
+### Xem danh sách quy tắc
+```bash
+curl http://localhost:8000/rules \
+  -H "Authorization: Bearer local-dev-token"
+```
+
+---
+
+## 6. Chạy Newman test trên stack Compose (tuỳ chọn)
 
 ```bash
 npm run test:compose
@@ -79,36 +124,32 @@ reports/newman-lab05-compose.html
 
 ---
 
-## 5. Dừng stack
-
-Khi không cần nữa, dừng và xoá các container bằng:
+## 7. Dừng stack
 
 ```bash
 docker compose down
-```
 
-Nếu muốn xoá volume dữ liệu của DB, thêm tuỳ chọn `-v`:
-
-```bash
+# Xoá cả volume dữ liệu DB
 docker compose down -v
 ```
 
 ---
 
-## 6. Lệnh nhanh
-
-Bạn có thể dùng Makefile:
+## 8. Lệnh nhanh (Makefile)
 
 ```bash
-make compose-up
-make compose-down
-make logs
+make compose-up    # build & chạy stack
+make compose-down  # dừng stack
+make logs          # theo dõi log
+make build         # build image riêng (không compose)
+make lint          # lint OpenAPI contract
 ```
 
 ---
 
-## 7. Mẹo gỡ lỗi
+## 9. Mẹo gỡ lỗi
 
-- Sử dụng `docker compose ps` để xem trạng thái container.
-- Nếu API trả lỗi kết nối DB, hãy kiểm tra biến môi trường `POSTGRES_*` trong `.env` và đảm bảo DB đã sẵn sàng (`pg_isready`).
-- Nếu AI service cần tải mô hình lớn, tăng `start_period` của healthcheck trong `docker-compose.yml`.
+- `docker compose ps` → xem trạng thái tất cả container.
+- Nếu `class-net` không tồn tại, tạo trước: `docker network create class-net`.
+- Nếu port 8000/9000 bị chiếm, sửa `APP_PORT`/`AI_PORT` trong `.env`.
+- AI Vision Mock dùng Python stdlib → không cần cài thêm gói, khởi động gần như tức thì.

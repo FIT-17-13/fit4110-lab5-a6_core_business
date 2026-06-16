@@ -1,0 +1,446 @@
+openapi: 3.1.0
+info:
+  title: FIT4110 Lab 05 – Core Business Service API
+  version: 0.5.0
+  description: |
+    Policy Engine cho Smart Campus Operations Platform.
+    Nhận sự kiện từ IoT Ingestion, Access Gate và AI Vision;
+    áp dụng quy tắc nghiệp vụ; tạo và quản lý cảnh báo.
+servers:
+  - url: http://localhost:8000
+    description: Local hoặc Docker Compose API service
+tags:
+  - name: system
+    description: Health và runtime info
+  - name: events
+    description: Nhận sự kiện từ các service khác
+  - name: alerts
+    description: Quản lý cảnh báo
+  - name: rules
+    description: Quản lý quy tắc nghiệp vụ
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Kiểm tra trạng thái service
+      security: []
+      responses:
+        "200":
+          description: Service đang hoạt động
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                ok:
+                  value:
+                    status: ok
+                    service: core-business
+                    version: 0.5.0
+
+  /events/iot:
+    post:
+      tags: [events]
+      operationId: processIoTEvent
+      summary: Nhận dữ liệu cảm biến từ IoT Ingestion Service
+      description: |
+        Kiểm tra các ngưỡng (ví dụ nhiệt độ > 35°C) và tạo cảnh báo nếu vi phạm.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IoTEvent"
+            examples:
+              high_temp:
+                value:
+                  device_id: ESP32-LAB-A01
+                  metric: temperature
+                  value: 38.5
+                  unit: celsius
+                  timestamp: "2026-05-13T08:30:00+07:00"
+      responses:
+        "200":
+          description: Sự kiện đã được xử lý
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /events/access:
+    post:
+      tags: [events]
+      operationId: processAccessEvent
+      summary: Nhận sự kiện quẹt thẻ từ Access Gate Service
+      description: |
+        Kiểm tra thẻ quẹt ngoài giờ cho phép (22:00–05:59) và tạo cảnh báo nếu phát hiện.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessEvent"
+            examples:
+              after_hours:
+                value:
+                  card_id: RFID-0042
+                  gate_id: GATE-A1
+                  direction: IN
+                  timestamp: "2026-05-13T23:15:00+07:00"
+      responses:
+        "200":
+          description: Sự kiện đã được xử lý
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /events/vision:
+    post:
+      tags: [events]
+      operationId: processVisionEvent
+      summary: Nhận kết quả phân tích hình ảnh từ AI Vision Service
+      description: |
+        Tạo cảnh báo khi risk_level là "high" hoặc "critical".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VisionEvent"
+            examples:
+              high_risk:
+                value:
+                  camera_id: CAM-01
+                  objects: ["person"]
+                  confidence: [0.95]
+                  risk_level: high
+                  timestamp: "2026-05-13T08:30:00+07:00"
+      responses:
+        "200":
+          description: Sự kiện đã được xử lý
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /alerts:
+    get:
+      tags: [alerts]
+      operationId: listAlerts
+      summary: Lấy danh sách cảnh báo đã tạo
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - in: query
+          name: severity
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+        - in: query
+          name: alert_type
+          schema:
+            type: string
+            enum: [high_temperature, after_hours_access, unknown_person, high_risk_detection]
+      responses:
+        "200":
+          description: Danh sách cảnh báo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Alert"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /rules:
+    get:
+      tags: [rules]
+      operationId: listRules
+      summary: Lấy danh sách quy tắc nghiệp vụ
+      responses:
+        "200":
+          description: Danh sách quy tắc
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Rule"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [rules]
+      operationId: createRule
+      summary: Thêm quy tắc nghiệp vụ mới
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleCreate"
+            examples:
+              new_rule:
+                value:
+                  name: High Humidity Rule
+                  condition: iot.humidity > threshold
+                  threshold: 90.0
+      responses:
+        "201":
+          description: Quy tắc đã được tạo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+
+  responses:
+    Unauthorized:
+      description: Thiếu hoặc sai token
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          examples:
+            unauthorized:
+              value:
+                type: https://smart-campus.local/problems/unauthorized
+                title: Unauthorized
+                status: 401
+                detail: Missing or invalid bearer token
+                instance: /events/iot
+    ValidationError:
+      description: Request không hợp lệ
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+        service:
+          type: string
+          example: core-business
+        version:
+          type: string
+          example: 0.5.0
+
+    IoTEvent:
+      type: object
+      required: [device_id, metric, value, timestamp]
+      properties:
+        device_id:
+          type: string
+          minLength: 3
+          example: ESP32-LAB-A01
+        metric:
+          type: string
+          enum: [temperature, humidity, motion, smoke]
+          example: temperature
+        value:
+          type: number
+          example: 38.5
+        unit:
+          type: string
+          example: celsius
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-13T08:30:00+07:00"
+
+    AccessEvent:
+      type: object
+      required: [card_id, gate_id, direction, timestamp]
+      properties:
+        card_id:
+          type: string
+          minLength: 3
+          example: RFID-0042
+        gate_id:
+          type: string
+          example: GATE-A1
+        direction:
+          type: string
+          enum: [IN, OUT]
+          example: IN
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-13T23:15:00+07:00"
+
+    VisionEvent:
+      type: object
+      required: [camera_id, objects, confidence, risk_level, timestamp]
+      properties:
+        camera_id:
+          type: string
+          example: CAM-01
+        objects:
+          type: array
+          items:
+            type: string
+          example: ["person"]
+        confidence:
+          type: array
+          items:
+            type: number
+          example: [0.95]
+        risk_level:
+          type: string
+          enum: [low, medium, high, critical]
+          example: high
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-13T08:30:00+07:00"
+
+    EventResult:
+      type: object
+      required: [processed, event_type, alerts_generated, alerts]
+      properties:
+        processed:
+          type: boolean
+          example: true
+        event_type:
+          type: string
+          example: iot
+        alerts_generated:
+          type: integer
+          example: 1
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Alert"
+
+    Alert:
+      type: object
+      required: [alert_id, alert_type, severity, message, source_event, created_at]
+      properties:
+        alert_id:
+          type: string
+          pattern: "^ALT-[0-9]{8}-[0-9]{4}$"
+          example: ALT-20260513-0001
+        alert_type:
+          type: string
+          enum: [high_temperature, after_hours_access, unknown_person, high_risk_detection]
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        message:
+          type: string
+        source_event:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    Rule:
+      type: object
+      required: [rule_id, name, condition, active, created_at]
+      properties:
+        rule_id:
+          type: string
+          example: RULE-001
+        name:
+          type: string
+          example: High Temperature Alert
+        condition:
+          type: string
+          example: iot.temperature > threshold
+        threshold:
+          type: number
+          nullable: true
+          example: 35.0
+        active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+
+    RuleCreate:
+      type: object
+      required: [name, condition]
+      properties:
+        name:
+          type: string
+          example: High Humidity Rule
+        condition:
+          type: string
+          example: iot.humidity > threshold
+        threshold:
+          type: number
+          nullable: true
+          example: 90.0
+
+    ProblemDetails:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type:
+          type: string
+          example: https://smart-campus.local/problems/validation-error
+        title:
+          type: string
+          example: Validation error
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+          example: 422
+        detail:
+          type: string
+          example: body.value is required
+        instance:
+          type: string
+          example: /events/iot
