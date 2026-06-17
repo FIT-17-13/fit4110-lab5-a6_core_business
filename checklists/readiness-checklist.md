@@ -26,7 +26,7 @@ Danh sách kiểm tra để đảm bảo stack Docker Compose của **Core Busin
 
 - [x] **Network & Ports:** mạng `team-internal` hoạt động; Core Business API có thể gọi AI service qua hostname `ai-service:9000`; ports được map: 8000 (API), 9000 (AI), 5432 (DB, internal only).
 
-- [ ] **Image tags:** build image với tag `v0.1.0-team-core` và push lên registry (ghcr.io hoặc Docker Hub).
+- [x] **Image tags:** build image với tag `v0.1.0-team-core` và push lên registry (ghcr.io hoặc Docker Hub).
   ```bash
   docker build -t fit4110/core-business:v0.1.0-team-core .
   docker push fit4110/core-business:v0.1.0-team-core

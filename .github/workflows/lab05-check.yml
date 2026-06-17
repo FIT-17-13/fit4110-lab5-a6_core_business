@@ -13,11 +13,9 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      # 1. Checkout source
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 2. Cài Node.js + Newman để chạy Postman test
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -26,22 +24,22 @@ jobs:
       - name: Install Newman + HTML reporter
         run: npm install -g newman newman-reporter-htmlextra
 
-      # 3. Tạo .env từ .env.example (không dùng secret thật)
       - name: Create .env from example
         run: cp .env.example .env
 
-      # 4. Lint docker-compose.yml (kiểm tra cú pháp)
       - name: Lint docker-compose.yml
         run: docker compose config --quiet
 
-      # 5. Build & start stack, đợi healthcheck pass (--wait)
+      # BƯỚC SỬA LỖI QUAN TRỌNG: Tạo mạng class-net trước khi chạy compose
+      - name: Create external network (class-net)
+        run: docker network create class-net
+
       - name: Build and start Compose stack
         run: docker compose up -d --build --wait
 
       - name: Show running containers
         run: docker compose ps
 
-      # 6. Smoke test các endpoint /health
       - name: Test API /health (port 8000)
         run: |
           for i in 1 2 3 4 5; do
@@ -65,7 +63,6 @@ jobs:
           set -a; source .env; set +a
           docker compose exec -T db pg_isready -U "$POSTGRES_USER"
 
-      # 7. Chạy Newman test nếu có collection
       - name: Run Newman collection
         run: |
           mkdir -p reports
@@ -77,16 +74,12 @@ jobs:
             exit 0
           fi
 
-          echo "Collection: $COLLECTION"
-          [ -n "$ENVIRONMENT" ] && echo "Environment: $ENVIRONMENT"
-
           newman run "$COLLECTION" \
             ${ENVIRONMENT:+-e "$ENVIRONMENT"} \
             -r cli,junit,htmlextra \
             --reporter-junit-export reports/newman-lab05-compose.xml \
             --reporter-htmlextra-export reports/newman-lab05-compose.html
 
-      # 8. Kiểm tra readiness checklist (yêu cầu tối thiểu 6 mục đã tick)
       - name: Verify readiness checklist
         run: |
           CHECKLIST="checklists/readiness-checklist.md"
@@ -105,21 +98,17 @@ jobs:
             exit 1
           fi
 
-      # 9. Upload report làm artifact để tải về
       - name: Upload Newman reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: newman-reports
           path: reports/
-          if-no-files-found: warn
 
-      # 10. Dump log khi fail để debug
       - name: Dump Compose logs on failure
         if: failure()
         run: docker compose logs
 
-      # 11. Cleanup
       - name: Tear down Compose stack
         if: always()
         run: docker compose down -v
